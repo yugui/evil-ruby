@@ -1,0 +1,15 @@
+= README for evil-ruby
+
+Extends Ruby's semantics by accessing its internals from pure Ruby code.
+
+
+== Installation
+
+De-compress archive and enter its top directory. Then type:
+
+  ($ su)
+  # ruby setup.rb
+
+This simple step installs this program under the default location of Ruby
+libraries. You can also install files into your favorite directory by supplying
+setup.rb with some options. Try "ruby setup.rb --help".
