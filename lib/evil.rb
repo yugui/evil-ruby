@@ -109,11 +109,30 @@ module RubyInternal
     "st_table *iv_tbl"    
   ])
 
-  RClass = struct(Basic + [
-    "st_table *iv_tbl",
-    "st_table *m_tbl",
-    "VALUE super"
-  ])
+  if Is_1_8
+    RClass = struct(Basic + [
+      "st_table *iv_tbl",
+      "st_table *m_tbl",
+      "VALUE super"
+    ])
+  else
+    RClass = struct(Basic + [
+      "rb_class_ext_t *ext",
+      "st_table *m_tbl",
+      "st_tble *iv_index_tbl"
+    ])
+    RClass::Extension = struct([
+      "VALUE super",
+      "st_table *iv_tbl"
+    ])
+    class RClass
+      # for compatibility
+      def iv_tbl; Extension.new(self.ext).iv_tbl end
+      def iv_tbl=(value); Extension.new(self.ext).iv_tbl = value end
+      def super; Extension.new(self.ext).super end
+      def super=(value); Extension.new(self.ext).super= value end
+    end
+  end
 
   RModule = RClass
 
@@ -585,20 +604,24 @@ end
 # It is a good idea to define #inspect for subclasses,
 # because Ruby will go into an endless loop when trying
 # to create an exception message if it is not there.
-class KernellessObject
-  class << self
-    def to_internal_type; ::Object.to_internal_type; end
+if RubyInternal::Is_1_8 
+  class KernellessObject
+    class << self
+      def to_internal_type; ::Object.to_internal_type; end
 
-    def allocate
-      obj = ::Object.allocate
-      obj.class = self
-      return obj
+      def allocate
+        obj = ::Object.allocate
+        obj.class = self
+        return obj
+      end
+
+      alias :new :allocate
     end
 
-    alias :new :allocate
+    self.superclass = nil
   end
-
-  self.superclass = nil
+else
+  KernellessObject = BasicObject
 end
 
 class UnboundMethod
@@ -688,4 +711,46 @@ class Proc
     return new_self
   end
   alias :context= :self=
+end
+
+class Object
+  def actual_class
+    if direct_value?
+      self.class
+    else
+      RubyInternal::RBasic.new(self.internal_ptr).klass.ptr2ref
+    end
+  end
+  def classification
+    result = []
+    obj = self
+    until result.include?(obj) or obj.nil?
+      result << obj
+      obj = obj.actual_class
+    end
+    result << obj
+  end
+end
+class Module
+  def actual_superclass
+    RubyInternal::RModule.new(self.internal_ptr).super.ptr2ref
+  end
+  def actual_ancestors
+    result = []
+    obj = self
+    until result.include?(obj) or obj.nil?
+      result << obj
+      obj = obj.actual_superclass rescue nil
+    end
+    result << obj
+  end
+end
+class Fixnum
+  def ptr2ref
+    if self % 4 == 0
+      DL::CPtr.new(self).to_value
+    else
+      raise ArgumentError, 'invalid as a pointer'
+    end
+  end
 end
